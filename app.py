@@ -230,7 +230,8 @@ class LoginFrame(tk.Frame):
 class MainFrame(tk.Frame):
     """
     Frame for logged-in users (Admin or normal).
-    Shows buttons for user mgmt (if Admin) and stock mgmt.
+    Shows buttons for user mgmt (if Admin), stock mgmt, and (optionally) 
+    stock logs if Admin.
     """
     def __init__(self, parent):
         super().__init__(parent)
@@ -247,6 +248,10 @@ class MainFrame(tk.Frame):
         self.manage_stock_btn = tk.Button(self, text="Manage Stock", command=self.open_stock_manager)
         self.manage_stock_btn.pack(pady=5)
 
+        # Admin-only: Stock Log
+        self.view_stock_log_btn = tk.Button(self, text="View Stock Logs", command=self.open_stock_log_viewer)
+        self.view_stock_log_btn.pack(pady=5)
+
         # Logout
         logout_btn = tk.Button(self, text="Logout", command=self.logout)
         logout_btn.pack(pady=20)
@@ -258,20 +263,23 @@ class MainFrame(tk.Frame):
     def update_greeting(self):
         """
         Called each time we show the main frame to greet the user properly.
-        Shows or hides the 'Manage Users' button depending on role.
+        Shows or hides the 'Manage Users' and 'View Stock Logs' buttons if Admin.
         """
         role = self.parent.current_user_role
         name = self.parent.current_user_name
+
         if role and name:
             self.greeting_label.config(text=f"Welcome, {role} - {name}!")
         else:
             self.greeting_label.config(text="Welcome!")
 
-        # Show "Manage Users" only if Admin
+        # Show "Manage Users" and "View Stock Logs" only if Admin
         if role == "Admin":
             self.manage_users_btn.pack(pady=5)
+            self.view_stock_log_btn.pack(pady=5)
         else:
             self.manage_users_btn.pack_forget()
+            self.view_stock_log_btn.pack_forget()
 
     def open_user_manager(self):
         """
@@ -287,6 +295,17 @@ class MainFrame(tk.Frame):
                      self.parent.current_user_role, 
                      self.parent.current_user_name, 
                      self.parent.current_user_uid)
+
+    def open_stock_log_viewer(self):
+        """
+        Open a new window to view the stock_logs table.
+        Only for Admin users.
+        """
+        # Double-check role if you like; or assume the button only appears for Admin
+        if self.parent.current_user_role == "Admin":
+            StockLogViewer(self)
+        else:
+            messagebox.showwarning("Permission Denied", "You are not allowed to view stock logs.")
 
     def logout(self):
         """
@@ -486,6 +505,57 @@ class StockManager(tk.Toplevel):
 
         messagebox.showinfo("Success", f"'{item_name}' quantity updated to {new_quantity}.")
         self.refresh_stock_list()
+
+# ===============================
+# Stock Log Viewer Window
+# ===============================
+class StockLogViewer(tk.Toplevel):
+    """
+    Displays the stock_logs table so Admin can see all changes made to stock.
+    """
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Stock Logs")
+        self.geometry("700x400")
+
+        self.conn = sqlite3.connect("inventory.db")
+        self.cursor = self.conn.cursor()
+
+        tk.Label(self, text="Stock Logs", font=("Helvetica", 16, "bold")).pack(pady=10)
+
+        # Treeview for stock_logs
+        # Columns: timestamp, name, change, user_name, user_uid
+        self.tree = ttk.Treeview(self, columns=("Timestamp", "Item", "Change", "User Name", "User UID"), show='headings')
+        self.tree.heading("Timestamp", text="Timestamp")
+        self.tree.heading("Item", text="Item")
+        self.tree.heading("Change", text="Change")
+        self.tree.heading("User Name", text="User Name")
+        self.tree.heading("User UID", text="User UID")
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # Refresh button
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(pady=5)
+        tk.Button(btn_frame, text="Refresh Logs", command=self.refresh_stock_logs).pack()
+
+        self.refresh_stock_logs()
+
+    def refresh_stock_logs(self):
+        """
+        Loads all rows from stock_logs and displays them in the Treeview.
+        """
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+
+        self.cursor.execute("""
+            SELECT timestamp, name, change, user_name, user_uid 
+            FROM stock_logs 
+            ORDER BY timestamp DESC
+        """)
+        logs = self.cursor.fetchall()
+        for log_row in logs:
+            # log_row = (timestamp, name, change, user_name, user_uid)
+            self.tree.insert("", tk.END, values=log_row)
 
 # ===============================
 # Main Entry
